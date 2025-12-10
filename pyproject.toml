@@ -1,0 +1,44 @@
+[project]
+name = "archextractor"
+version = "0.1.0"
+description = "A module for extracting archive files, which wraps the patoolib library, can recursively process nested compressed package files."
+readme = "README.md"
+authors = [{ name = "ChijiangZhai", email = "chijiangzhai@gmail.com" }]
+maintainers = [{ name = "ChijiangZhai", email = "chijiangzhai@gmail.com" }]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: GNU Lesser General Public License v2 or later (LGPLv2+)",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3.15",
+    "Topic :: Utilities",
+    "Topic :: System",
+    "Topic :: System :: Archiving",
+]
+license = { file = "LICENSE" }
+keywords = [
+    "python",
+    "archive",
+    "uncompress",
+]
+requires-python = ">=3.12"
+dependencies = [
+    "loguru>=0.7.3",
+    "patool>=4.0.2",
+    "rich>=14.2.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/2513502304/ArchExtractor"
+# Documentation = "https://archextractor.readthedocs.io/"
+Repository = "https://github.com/2513502304/ArchExtractor.git"
+Issues = "https://github.com/2513502304/ArchExtractor/issues"
+# Changelog = "https://github.com/2513502304/ArchExtractor/blob/master/CHANGELOG.md"
