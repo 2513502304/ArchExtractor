@@ -5,7 +5,7 @@ import patoolib
 from loguru import logger
 from patoolib.util import PatoolError
 
-from utils import is_auto_generated
+from .utils import is_auto_generated
 
 
 class ArchExtractor:
