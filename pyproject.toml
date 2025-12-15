@@ -1,6 +1,6 @@
 [project]
 name = "archextractor"
-version = "0.1.1"
+version = "0.1.2"
 description = "A module for extracting archive files, which wraps the patoolib library, can recursively process nested compressed package files."
 readme = "README.md"
 authors = [{ name = "ChijiangZhai", email = "chijiangzhai@gmail.com" }]
