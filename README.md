@@ -43,6 +43,7 @@ extractor = ArchExtractor(
 
 # Extract all the archive files in the source path, including the nested archive files
 extractor.extractall(
+    mode="e",   # The mode of the extraction. If set to "e", the extracted files will be moved to the top level directory. If set to "x", the extracted files will be kept in the original directory structure
     verbosity=-1,  # See patoolib.extract_archive for more details
     cleanup=True,  # The source archive file will be deleted after extraction
 )
