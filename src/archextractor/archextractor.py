@@ -148,7 +148,7 @@ class ArchExtractor:
                     cleanup=cleanup,
                 )
 
-        # 由于内部使用的提取函数均设置为 "x"，故只有最顶层的调用才会判断是否需要扁平化
+        # 由于内部使用的提取函数均设置为 "x"，故只有最顶层的堆栈调用才会判断是否需要扁平化
         if mode == "x":
             pass
         elif mode == "e":
@@ -275,17 +275,17 @@ class ArchExtractor:
             dst = self.dst
 
         try:
-            # 顶层目录下的所有文件夹名称
-            root_dirnames = [
-                dirname
-                for dirname in os.listdir(dst)
-                if os.path.isdir(os.path.join(dst, dirname))
-            ]
             # 将所有文件夹移动到顶层目录（topdown=False，从深至浅遍历，因为文件夹会嵌套文件夹，而文件不会）
             for root, dirs, files in os.walk(dst, topdown=False):
                 # 跳过已经在顶层目录的文件夹
                 if root == dst:
                     continue
+                # 顶层目录下的所有文件夹名称（每次运行时均检查，以应对处理过程中动态移动嵌套文件夹从而增加顶层目录文件夹的问题）
+                root_dirnames = [
+                    dirname
+                    for dirname in os.listdir(dst)
+                    if os.path.isdir(os.path.join(dst, dirname))
+                ]
                 for dirname in dirs:
                     # 如果目标文件夹已存在，处理文件夹名称冲突（重命名）
                     dest_dirname = dirname
@@ -298,17 +298,17 @@ class ArchExtractor:
                             counter += 1
                     shutil.move(os.path.join(root, dirname), dest_dirpath)
 
-            # 顶层目录下的所有文件夹名称
-            root_filenames = [
-                filename
-                for filename in os.listdir(dst)
-                if os.path.isfile(os.path.join(dst, filename))
-            ]
             # 将所有文件移动到顶层目录
             for root, dirs, files in os.walk(dst, topdown=True):
                 # 跳过已经在顶层目录的文件
                 if root == dst:
                     continue
+                # 顶层目录下的所有文件夹名称（每次运行时均检查，以应对处理过程中动态移动嵌套文件从而增加顶层目录文件的问题）
+                root_filenames = [
+                    filename
+                    for filename in os.listdir(dst)
+                    if os.path.isfile(os.path.join(dst, filename))
+                ]
                 for filename in files:
                     # 如果目标文件已存在，处理文件名称冲突（重命名）
                     dest_filename = filename
