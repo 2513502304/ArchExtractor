@@ -142,7 +142,7 @@ class ArchExtractor:
                 program=program,
                 interactive=interactive,
                 password=password,
-                cleanup=cleanup,
+                cleanup=False,
             )
             is None
         ):
@@ -162,26 +162,29 @@ class ArchExtractor:
                         continue
                     if not patoolib.is_archive(sub_file):
                         continue
+                    result = self.extract(
+                        src=sub_file,
+                        dst=os.path.dirname(sub_file),
+                        mode="x",
+                        verbosity=verbosity,
+                        program=program,
+                        interactive=interactive,
+                        password=password,
+                        cleanup=cleanup,
+                    )
+                    if result is None:
+                        return None
                     processed_archives.add(real_sub_file)
-                    if (
-                        self.extract(
-                            src=sub_file,
-                            dst=os.path.dirname(sub_file),
-                            mode="x",
-                            verbosity=verbosity,
-                            program=program,
-                            interactive=interactive,
-                            password=password,
-                            cleanup=cleanup,
-                        )
-                        is not None
-                    ):
-                        extracted_nested_archive = True
+                    extracted_nested_archive = True
             if not extracted_nested_archive:
                 break
 
         if mode == "e":
             self.flatten(dst=dst)
+
+        if cleanup and os.path.exists(src):
+            os.remove(src)
+            logger.info(f"Removed the file {src} because cleanup is enabled")
 
         return dst
 

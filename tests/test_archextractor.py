@@ -89,6 +89,54 @@ class ArchExtractorTest(unittest.TestCase):
         self.assertIsNone(result)
         self.assertTrue(source.exists())
 
+    def test_extractall_does_not_delete_source_when_nested_archive_fails(self):
+        source = self.make_zip(self.base / "source.zip", {"file.txt": "content"})
+        out = self.base / "out"
+
+        def extract_archive(src, outdir, **kwargs):
+            if Path(src) == source:
+                out.mkdir()
+                (out / "nested.zip").write_text("not extracted yet")
+                return str(out)
+            raise PatoolError("simulated nested failure")
+
+        with (
+            mock.patch.object(ArchExtractor, "test_archive", return_value=True),
+            mock.patch(
+                "archextractor.archextractor.patoolib.extract_archive",
+                side_effect=extract_archive,
+            ),
+        ):
+            result = ArchExtractor().extractall(
+                src=str(source),
+                dst=str(out),
+                verbosity=-1,
+                cleanup=True,
+            )
+
+        self.assertIsNone(result)
+        self.assertTrue(source.exists())
+        self.assertTrue((out / "nested.zip").exists())
+
+    def test_extractall_deletes_source_after_nested_extraction_succeeds(self):
+        inner = self.make_zip(self.base / "inner.zip", {"inside.txt": "nested"})
+        source = self.base / "source.zip"
+        with zipfile.ZipFile(source, "w") as archive:
+            archive.write(inner, "inner.zip")
+        out = self.base / "out"
+
+        result = ArchExtractor().extractall(
+            src=str(source),
+            dst=str(out),
+            verbosity=-1,
+            cleanup=True,
+        )
+
+        self.assertEqual(result, str(out))
+        self.assertFalse(source.exists())
+        self.assertFalse((out / "inner.zip").exists())
+        self.assert_tree(out, {"inside.txt"})
+
     def test_invalid_mode_does_not_extract_files(self):
         source = self.make_zip(self.base / "source.zip", {"file.txt": "content"})
         out = self.base / "out"
