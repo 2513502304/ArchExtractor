@@ -21,7 +21,7 @@ IGNORE_FILE_PATTERN: list[re.Pattern[str]] = [
         r"(^|/)\.AppleDB(/|$)",  # 旧式 Apple 数据库（很少见）
         r"(^|/).+\.icloud$",  # iCloud 占位符（未完全下载的文件）
         # tar/pax 派生条目（不是实际内容，仅元数据占位）
-        r"(^|/)PaxHeader/[^/]+$",  # POSIX PAX 扩展头（为长文件名、时间戳精度、ACL、xattr 等附加元数据）伪路径（常见）
+        r"(^|/)PaxHeader(/|$)",  # POSIX PAX 扩展头（为长文件名、时间戳精度、ACL、xattr 等附加元数据）伪路径（常见）
         r"(^|/)pax_global_header$",  # POSIX PAX 全局头条目
         r"(^|/)gnu_longlink$",  # GNU tar 长链接占位符（为长文件名服务）
         # Windows 系统元数据
