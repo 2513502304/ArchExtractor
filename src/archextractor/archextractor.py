@@ -11,17 +11,51 @@ from .utils import is_auto_generated
 
 class ArchExtractor:
     """
-    A class for extracting archive files, which wraps the patoolib library
+    Stateless archive extractor built on top of patool.
+
+    Each operation receives explicit ``src`` and ``dst`` paths, so the same instance can be reused for multiple unrelated archives.
+
+    Public API:
+        - ``test_archive(src, ...)``: Validate whether an archive can be processed by patool.
+        - ``extract(src, dst, ...)``: Extract one archive without recursively processing nested archives.
+        - ``extractall(src, dst, ...)``: Extract one archive and recursively extract nested archives found in the output tree.
+
+    Internal helpers:
+        Methods whose names start with ``_`` are implementation details used by the public API and should not be called directly by consumers.
     """
 
     @staticmethod
     def _validate_mode(mode: str) -> Literal["e", "x"]:
+        """
+        Validate and normalize the extraction mode.
+
+        Args:
+            mode (str): Extraction mode. ``"x"`` preserves directory structure. ``"e"`` flattens extracted files into the destination directory.
+
+        Returns:
+            Literal["e", "x"]: The validated mode.
+
+        Raises:
+            ValueError: If ``mode`` is not ``"e"`` or ``"x"``.
+        """
         if mode not in ("e", "x"):
             raise ValueError("Incorrect mode parameter")
         return mode  # type: ignore[return-value]
 
     @staticmethod
     def _unique_destination(dst: str, filename: str) -> str:
+        """
+        Return a non-existing destination path for a flattened file.
+
+        If ``filename`` already exists as either a file or directory under ``dst``, a numeric suffix is appended before the extension.
+
+        Args:
+            dst (str): Destination directory.
+            filename (str): Original file name to move into ``dst``.
+
+        Returns:
+            str: A path under ``dst`` that does not currently exist.
+        """
         dest_filepath = os.path.join(dst, filename)
         if not os.path.exists(dest_filepath):
             return dest_filepath
@@ -36,6 +70,12 @@ class ArchExtractor:
 
     @staticmethod
     def _remove_auto_generated(dst: str) -> None:
+        """
+        Remove known OS/tool-generated files from an extracted tree.
+
+        Args:
+            dst (str): Root directory to scan and clean.
+        """
         for root, dirs, files in os.walk(dst, topdown=True):
             for dirname in list(dirs):
                 dirpath = os.path.join(root, dirname)
@@ -62,20 +102,24 @@ class ArchExtractor:
         password: str | None = None,
     ) -> bool:
         """
-        Test if the file is a valid archive file, two steps:
-        1. Preliminarily judge whether a file is a compressed package based on the file suffix (rough screening)
-        2. Further check whether the compressed file exists or is a regular file (fine screening)
+        Test whether ``src`` is a readable archive supported by patool.
+
+        The check has two stages:
+
+        1. Use patool's archive-name detection as a quick suffix/format screen (rough screening).
+        2. Ask patool to test the archive with the selected backend program (fine screening).
 
         Args:
             src (str): The source path of the archive file (only file path, not directory path).
-            verbosity (int, optional): See `patoolib.test_archive` for more details. Defaults to 0.
-            program (str | None, optional): See `patoolib.test_archive` for more details. Defaults to None.
-            interactive (bool, optional): See `patoolib.test_archive` for more details. Defaults to False.
-            password (str | None, optional): See `patoolib.test_archive` for more details. Defaults to None.
+            verbosity (int, optional): Larger values print more information. 0 is the default, -1 or lower means no output, values >= 1 prints command output. Defaults to 0.
+            program (str | None, optional): If None (the default), a list of suitable archive programs are checked if they exist in the system search path (defined by the PATH environment variable). If a program name is given, it is added to the list of programs that is searched for. The program should be a relative or absolute path name to an executable. Defaults to None.
+            interactive (bool, optional): If True, wait for user input if the extraction program asks for it. This should be set to True if you intend to type in a password interactively. If set to False, standard input will be set to an empty string to prevent simple hangs from programs requiring input. Defaults to False.
+            password (str | None, optional): If an archive is encrypted, set the given password with command line options. Note that the password might be written to logs that keep track of your command line history. If an archive program does not support passwords this option is ignored by patool. Defaults to None.
 
         Returns:
-            bool: True if the file is a valid archive file, False otherwise
+            bool: ``True`` when patool accepts and tests the archive successfully (processable archive files). ``False`` when detection or backend validation fails (unprocessable archive files).
         """
+
         # 根据文件后缀名初步判断文件是否是压缩包（粗筛）
         if not patoolib.is_archive(src):
             logger.error(f"The file {src} is not a valid archive file")
@@ -111,25 +155,36 @@ class ArchExtractor:
         interactive: bool = False,
         password: str | None = None,
         cleanup: bool = False,
-    ):
+    ) -> str | None:
         """
-        Extract all the archive files in the source path, including the nested archive files.
-
-        If the cleanup parameter is provided as True, the source archive file will be deleted after extraction.
+        Extract ``src`` and recursively extract nested archives found under ``dst``.
 
         Note:
-            It will preserve the complete original directory structure of the extracted files.
+            ``mode="x"`` preserves the complete original directory structure of the extracted files.
+
+            ``mode="e"`` first extracts every nested archive, then flattens all extracted files into ``dst`` and removes empty directories.
+
+            When ``cleanup=True``, the top-level source archive is removed only after every archive extraction in the recursive pass returns successfully.
+
+            Nested archives are removed after their own successful extraction.
 
         Args:
             src (str): The source path of the archive file (only file path, not directory path).
             dst (str): The destination path of the extracted files (only directory path, not file path).
             mode (Literal["e", "x"], optional): The mode of the extraction. Defaults to "x". If set to "e", the extracted files will be moved to the top level directory. If set to "x", the extracted files will be kept in the original directory structure.
-            verbosity (int, optional): See `patoolib.extract_archive` for more details. Defaults to 0.
-            program (str | None, optional): See `patoolib.extract_archive` for more details. Defaults to None.
-            interactive (bool, optional): See `patoolib.extract_archive` for more details. Defaults to False.
-            password (str | None, optional): See `patoolib.extract_archive` for more details. Defaults to None.
+            verbosity (int, optional): Larger values print more information. 0 is the default, -1 or lower means no output, values >= 1 prints command output. Defaults to 0.
+            program (str | None, optional): If None (the default), a list of suitable archive programs are checked if they exist in the system search path (defined by the PATH environment variable). If a program name is given, it is added to the list of programs that is searched for. The program should be a relative or absolute path name to an executable. Defaults to None.
+            interactive (bool, optional): If True, wait for user input if the extraction program asks for it. This should be set to True if you intend to type in a password interactively. If set to False, standard input will be set to an empty string to prevent simple hangs from programs requiring input. Defaults to False.
+            password (str | None, optional): If an archive is encrypted, set the given password with command line options. Note that the password might be written to logs that keep track of your command line history. If an archive program does not support passwords this option is ignored by patool. Defaults to None.
             cleanup (bool, optional): If the cleanup parameter is provided as True, the source archive file will be deleted after extraction. Defaults to False.
+
+        Returns:
+            str | None: ``dst`` when the top-level archive and every nested archive are extracted successfully. ``None`` if any archive validation or extraction step fails.
+
+        Raises:
+            ValueError: If ``mode`` is not ``"e"`` or ``"x"``.
         """
+
         mode = self._validate_mode(mode)
 
         # 提取顶层压缩包
@@ -180,7 +235,7 @@ class ArchExtractor:
                 break
 
         if mode == "e":
-            self.flatten(dst=dst)
+            self._flatten(dst=dst)
 
         if cleanup and os.path.exists(src):
             os.remove(src)
@@ -200,23 +255,32 @@ class ArchExtractor:
         cleanup: bool = False,
     ) -> str | None:
         """
-        Extract the archive file in the source path, but do not include nested archive files.
-
-        If the cleanup parameter is provided as True, the source archive file will be deleted after extraction.
+        Extract a single archive without recursively processing nested archives.
 
         Note:
-            It will preserve the complete original directory structure of the extracted files.
+            ``mode="x"`` preserves the complete original directory structure of the extracted files.
+
+            ``mode="e"`` flattens the files produced by this extraction into ``dst``.
+
+            When ``cleanup=True``, ``src`` is removed only after patool extraction succeeds and the cleanup step is reached.
 
         Args:
             src (str): The source path of the archive file (only file path, not directory path).
             dst (str): The destination path of the extracted files (only directory path, not file path).
             mode (Literal["e", "x"], optional): The mode of the extraction. Defaults to "x". If set to "e", the extracted files will be moved to the top level directory. If set to "x", the extracted files will be kept in the original directory structure.
-            verbosity (int, optional): See `patoolib.extract_archive` for more details. Defaults to 0.
-            program (str | None, optional): See `patoolib.extract_archive` for more details. Defaults to None.
-            interactive (bool, optional): See `patoolib.extract_archive` for more details. Defaults to False.
-            password (str | None, optional): See `patoolib.extract_archive` for more details. Defaults to None.
+            verbosity (int, optional): Larger values print more information. 0 is the default, -1 or lower means no output, values >= 1 prints command output. Defaults to 0.
+            program (str | None, optional): If None (the default), a list of suitable archive programs are checked if they exist in the system search path (defined by the PATH environment variable). If a program name is given, it is added to the list of programs that is searched for. The program should be a relative or absolute path name to an executable. Defaults to None.
+            interactive (bool, optional): If True, wait for user input if the extraction program asks for it. This should be set to True if you intend to type in a password interactively. If set to False, standard input will be set to an empty string to prevent simple hangs from programs requiring input. Defaults to False.
+            password (str | None, optional): If an archive is encrypted, set the given password with command line options. Note that the password might be written to logs that keep track of your command line history. If an archive program does not support passwords this option is ignored by patool. Defaults to None.
             cleanup (bool, optional): If the cleanup parameter is provided as True, the source archive file will be deleted after extraction. Defaults to False.
+
+        Returns:
+            str | None: The directory where the archive has been extracted (returned by ``patoolib.extract_archive``) when extraction succeeds. ``None`` when validation or extraction fails.
+
+        Raises:
+            ValueError: If ``mode`` is not ``"e"`` or ``"x"``.
         """
+
         mode = self._validate_mode(mode)
 
         # 测试该压缩包是否可解压
@@ -227,7 +291,7 @@ class ArchExtractor:
             interactive=interactive,
             password=password,
         ):
-            return
+            return None
 
         try:
             # 尝试提取该压缩文件
@@ -252,7 +316,7 @@ class ArchExtractor:
             self._remove_auto_generated(dst)
 
             if mode == "e":
-                self.flatten(dst=dst)
+                self._flatten(dst=dst)
 
             # 只有在 patool 解压成功并完成后处理后，才删除源压缩包。
             if cleanup and os.path.exists(src):
@@ -266,15 +330,20 @@ class ArchExtractor:
 
         return extracted_path
 
-    def flatten(
+    def _flatten(
         self,
         dst: str,
-    ):
+    ) -> None:
         """
-        Flatten the extracted files, remove the original directory structure and move all files to the top level directory.
+        Flatten extracted files into ``dst`` and remove empty directories.
+
+        Files whose names conflict with existing files or directories in ``dst`` are renamed with a numeric suffix.
 
         Args:
             dst (str): The destination path of the flattened files (only directory path, not file path).
+
+        Returns:
+            None
         """
         try:
             # 将所有文件移动到顶层目录，并从深至浅清理空目录。只移动文件，

@@ -43,7 +43,7 @@ extractor.extractall(
     src="/data/archive.tar",  # The source path of the archive file (only file path, not directory path)
     dst="/data/unpacked",  # The destination path of the extracted files (only directory path, not file path)
     mode="e",   # The mode of the extraction. If set to "e", the extracted files will be moved to the top level directory. If set to "x", the extracted files will be kept in the original directory structure
-    verbosity=-1,  # See patoolib.extract_archive for more details
+    verbosity=-1,  # Larger values print more information. 0 is the default, -1 or lower means no output, values >= 1 prints command output
     cleanup=True,  # The source archive file will be deleted after extraction
 )
 ```
