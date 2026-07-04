@@ -1,5 +1,6 @@
 import os
 import shutil
+import subprocess
 from typing import Literal
 
 import patoolib
@@ -69,6 +70,31 @@ class ArchExtractor:
             counter += 1
 
     @staticmethod
+    def _is_archive(src: str) -> bool:
+        """
+        Return whether ``src`` can be treated as an archive candidate.
+
+        patool delegates MIME detection to the system ``file`` command. Some
+        ``file`` versions can exit non-zero while inspecting otherwise usable
+        regular files; for example, a JPEG with Exif/TIFF metadata can trigger
+        ``name use count (50) exceeded``. In recursive scans those files should
+        be skipped as non-archives instead of aborting extraction.
+
+        Args:
+            src (str): File path to check.
+
+        Returns:
+            bool: ``True`` if patool identifies ``src`` as an archive, otherwise ``False``.
+        """
+        try:
+            return patoolib.is_archive(src)
+        except (OSError, subprocess.CalledProcessError) as exc:
+            logger.warning(
+                f"Failed to detect whether {src} is an archive; skipping it: {exc.__class__.__name__}: {exc}"
+            )
+            return False
+
+    @staticmethod
     def _remove_auto_generated(dst: str) -> None:
         """
         Remove known OS/tool-generated files from an extracted tree.
@@ -121,7 +147,7 @@ class ArchExtractor:
         """
 
         # 根据文件后缀名初步判断文件是否是压缩包（粗筛）
-        if not patoolib.is_archive(src):
+        if not self._is_archive(src):
             logger.error(f"The file {src} is not a valid archive file")
             return False
 
@@ -215,7 +241,7 @@ class ArchExtractor:
                     real_sub_file = os.path.realpath(sub_file)
                     if real_sub_file in processed_archives:
                         continue
-                    if not patoolib.is_archive(sub_file):
+                    if not self._is_archive(sub_file):
                         continue
                     result = self.extract(
                         src=sub_file,

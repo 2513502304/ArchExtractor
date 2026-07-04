@@ -1,10 +1,12 @@
-import tempfile
+import subprocess
 import tarfile
+import tempfile
 import unittest
 import zipfile
 from pathlib import Path
 from unittest import mock
 
+import patoolib
 from loguru import logger
 from patoolib.util import PatoolError
 
@@ -56,6 +58,35 @@ class ArchExtractorTest(unittest.TestCase):
         extractor.extractall(src=str(top), dst=str(out), verbosity=-1, cleanup=False)
 
         self.assert_tree(out, {"inner.zip", "inside.txt"})
+
+    def test_extractall_skips_file_when_archive_detection_backend_errors(self):
+        source = self.make_zip(self.base / "source.zip", {"069.jpg": "jpeg payload"})
+        out = self.base / "out"
+
+        original_is_archive = patoolib.is_archive
+
+        def is_archive(path):
+            if Path(path).name == "069.jpg":
+                raise subprocess.CalledProcessError(
+                    returncode=1,
+                    cmd=["/usr/bin/file", "--brief", str(path)],
+                    output="ERROR: JPEG image data, Exif standard: [TIFF image data] name use count (50) exceeded",
+                )
+            return original_is_archive(path)
+
+        with mock.patch(
+            "archextractor.archextractor.patoolib.is_archive",
+            side_effect=is_archive,
+        ):
+            result = ArchExtractor().extractall(
+                src=str(source),
+                dst=str(out),
+                verbosity=-1,
+                cleanup=False,
+            )
+
+        self.assertEqual(result, str(out))
+        self.assert_tree(out, {"069.jpg"})
 
     def test_extractall_can_reuse_one_extractor_for_multiple_archives(self):
         first = self.make_zip(self.base / "first.zip", {"first.txt": "1"})
