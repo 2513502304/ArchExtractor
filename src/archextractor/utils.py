@@ -1,4 +1,3 @@
-from rich import print
 import re
 
 # “系统/工具自动生成”的常见垃圾文件正则

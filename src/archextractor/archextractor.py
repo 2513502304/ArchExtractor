@@ -162,7 +162,7 @@ class ArchExtractor:
         Note:
             ``mode="x"`` preserves the complete original directory structure of the extracted files.
 
-            ``mode="e"`` first extracts every nested archive, then flattens all extracted files into ``dst`` and removes empty directories.
+            ``mode="e"`` first extracts every nested archive, then flattens all extracted files into ``dst`` and removes empty directories. If a flattened file name already exists, a numeric suffix such as ``(1)`` is appended before the extension to avoid overwriting existing files.
 
             When ``cleanup=True``, the top-level source archive is removed only after every archive extraction in the recursive pass returns successfully.
 
@@ -171,12 +171,12 @@ class ArchExtractor:
         Args:
             src (str): The source path of the archive file (only file path, not directory path).
             dst (str): The destination path of the extracted files (only directory path, not file path).
-            mode (Literal["e", "x"], optional): The mode of the extraction. Defaults to "x". If set to "e", the extracted files will be moved to the top level directory. If set to "x", the extracted files will be kept in the original directory structure.
+            mode (Literal["e", "x"], optional): The mode of the extraction. Defaults to "x". If set to "e", the extracted files will be moved to the top level directory, and duplicate flattened file names will be renamed with suffixes such as "(1)" to avoid overwrites. If set to "x", the extracted files will be kept in the original directory structure. Defaults to "x".
             verbosity (int, optional): Larger values print more information. 0 is the default, -1 or lower means no output, values >= 1 prints command output. Defaults to 0.
             program (str | None, optional): If None (the default), a list of suitable archive programs are checked if they exist in the system search path (defined by the PATH environment variable). If a program name is given, it is added to the list of programs that is searched for. The program should be a relative or absolute path name to an executable. Defaults to None.
             interactive (bool, optional): If True, wait for user input if the extraction program asks for it. This should be set to True if you intend to type in a password interactively. If set to False, standard input will be set to an empty string to prevent simple hangs from programs requiring input. Defaults to False.
             password (str | None, optional): If an archive is encrypted, set the given password with command line options. Note that the password might be written to logs that keep track of your command line history. If an archive program does not support passwords this option is ignored by patool. Defaults to None.
-            cleanup (bool, optional): If the cleanup parameter is provided as True, the source archive file will be deleted after extraction. Defaults to False.
+            cleanup (bool, optional): If the cleanup parameter is provided as True, the source archive file will be deleted after successful extraction. Defaults to False.
 
         Returns:
             str | None: ``dst`` when the top-level archive and every nested archive are extracted successfully. ``None`` if any archive validation or extraction step fails.
@@ -260,19 +260,19 @@ class ArchExtractor:
         Note:
             ``mode="x"`` preserves the complete original directory structure of the extracted files.
 
-            ``mode="e"`` flattens the files produced by this extraction into ``dst``.
+            ``mode="e"`` flattens the files produced by this extraction into ``dst``. If a flattened file name already exists, a numeric suffix such as ``(1)`` is appended before the extension to avoid overwriting existing files.
 
             When ``cleanup=True``, ``src`` is removed only after patool extraction succeeds and the cleanup step is reached.
 
         Args:
             src (str): The source path of the archive file (only file path, not directory path).
             dst (str): The destination path of the extracted files (only directory path, not file path).
-            mode (Literal["e", "x"], optional): The mode of the extraction. Defaults to "x". If set to "e", the extracted files will be moved to the top level directory. If set to "x", the extracted files will be kept in the original directory structure.
+            mode (Literal["e", "x"], optional): The mode of the extraction. Defaults to "x". If set to "e", the extracted files will be moved to the top level directory, and duplicate flattened file names will be renamed with suffixes such as "(1)" to avoid overwrites. If set to "x", the extracted files will be kept in the original directory structure. Defaults to "x".
             verbosity (int, optional): Larger values print more information. 0 is the default, -1 or lower means no output, values >= 1 prints command output. Defaults to 0.
             program (str | None, optional): If None (the default), a list of suitable archive programs are checked if they exist in the system search path (defined by the PATH environment variable). If a program name is given, it is added to the list of programs that is searched for. The program should be a relative or absolute path name to an executable. Defaults to None.
             interactive (bool, optional): If True, wait for user input if the extraction program asks for it. This should be set to True if you intend to type in a password interactively. If set to False, standard input will be set to an empty string to prevent simple hangs from programs requiring input. Defaults to False.
             password (str | None, optional): If an archive is encrypted, set the given password with command line options. Note that the password might be written to logs that keep track of your command line history. If an archive program does not support passwords this option is ignored by patool. Defaults to None.
-            cleanup (bool, optional): If the cleanup parameter is provided as True, the source archive file will be deleted after extraction. Defaults to False.
+            cleanup (bool, optional): If the cleanup parameter is provided as True, the source archive file will be deleted after successful extraction. Defaults to False.
 
         Returns:
             str | None: The directory where the archive has been extracted (returned by ``patoolib.extract_archive``) when extraction succeeds. ``None`` when validation or extraction fails.
@@ -337,7 +337,7 @@ class ArchExtractor:
         """
         Flatten extracted files into ``dst`` and remove empty directories.
 
-        Files whose names conflict with existing files or directories in ``dst`` are renamed with a numeric suffix.
+        Files whose names conflict with existing files or directories in ``dst`` are renamed with a numeric suffix such as ``(1)`` instead of overwriting the existing path.
 
         Args:
             dst (str): The destination path of the flattened files (only directory path, not file path).
