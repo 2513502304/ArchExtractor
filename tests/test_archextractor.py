@@ -365,6 +365,20 @@ class ArchExtractorTest(unittest.TestCase):
         self.assertTrue(source.exists())
         self.assert_tree(out, set())
 
+    def test_cleanup_matches_paths_relative_to_the_extraction(self):
+        # "(^|/)\\..*\\.swp$" spans "/": matched against an absolute path, any
+        # hidden component above the file (the staging directory, or a hidden
+        # dst) would turn an ordinary "data.swp" into a vim swap file.
+        out = self.base / ".hidden-parent" / "out"
+        source = self.make_zip(
+            self.base / "source.zip",
+            {"book/data.swp": "real file", "book/.data.swp": "vim swap"},
+        )
+
+        ArchExtractor().extract(src=str(source), dst=str(out), verbosity=-1)
+
+        self.assert_tree(out, {"book/data.swp"})
+
     def test_only_directory_patterns_mark_a_directory_as_generated(self):
         self.assertTrue(is_auto_generated_dir("archive/__MACOSX"))
         self.assertTrue(is_auto_generated_dir("archive/PaxHeader"))
