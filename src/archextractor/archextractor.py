@@ -58,15 +58,17 @@ class ArchExtractor:
         Returns:
             str: A path under ``dst`` that does not currently exist.
         """
+        # lexists, not exists: a dangling symlink still occupies the name, and
+        # moving onto it would silently replace it.
         dest_filepath = os.path.join(dst, filename)
-        if not os.path.exists(dest_filepath):
+        if not os.path.lexists(dest_filepath):
             return dest_filepath
 
         basename, ext = os.path.splitext(filename)
         counter = 1
         while True:
             candidate = os.path.join(dst, f"{basename}({counter}){ext}")
-            if not os.path.exists(candidate):
+            if not os.path.lexists(candidate):
                 return candidate
             counter += 1
 
@@ -104,7 +106,15 @@ class ArchExtractor:
         for name in os.listdir(src_dir):
             src_path = os.path.join(src_dir, name)
             dst_path = os.path.join(dst, name)
-            if os.path.isdir(src_path) and not os.path.islink(src_path) and os.path.isdir(dst_path):
+            # Merge only real directory into real directory: following a symlink
+            # that already sits in dst would write the extracted files wherever
+            # it points, outside dst. A symlink is treated as an occupied name.
+            if (
+                os.path.isdir(src_path)
+                and not os.path.islink(src_path)
+                and os.path.isdir(dst_path)
+                and not os.path.islink(dst_path)
+            ):
                 cls._merge_into(src_path, dst_path)
                 os.rmdir(src_path)
                 continue
