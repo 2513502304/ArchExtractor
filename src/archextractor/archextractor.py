@@ -1,13 +1,14 @@
 import os
 import shutil
 import subprocess
+import tempfile
 from typing import Literal
 
 import patoolib
 from loguru import logger
 from patoolib.util import PatoolError
 
-from .utils import is_auto_generated
+from .utils import is_auto_generated, is_auto_generated_dir
 
 
 class ArchExtractor:
@@ -70,6 +71,48 @@ class ArchExtractor:
             counter += 1
 
     @staticmethod
+    def _make_staging(dst: str) -> str:
+        """
+        Create a private, empty staging directory inside ``dst``.
+
+        Every extraction writes into its own staging directory first, so cleanup and flattening only ever see the files this call produced (never what ``dst`` already held), and a failed extraction can be discarded as a whole instead of leaving partial output in ``dst``. It lives inside ``dst`` so the final move is a rename on the same filesystem.
+
+        Args:
+            dst (str): Destination directory; created if it does not exist.
+
+        Returns:
+            str: The path of the new staging directory.
+        """
+        os.makedirs(dst, exist_ok=True)
+        return tempfile.mkdtemp(prefix=".archextractor-", dir=dst)
+
+    @classmethod
+    def _merge_into(cls, src_dir: str, dst: str) -> None:
+        """
+        Move everything under ``src_dir`` into ``dst``, keeping the relative layout.
+
+        Directories are merged with directories of the same name. A file (or a file/directory pair) whose name already exists in the target directory is renamed with a numeric suffix such as ``(1)``, the same rule ``mode="e"`` uses, so nothing that was already in ``dst`` is overwritten.
+
+        Args:
+            src_dir (str): Directory whose contents are moved (left empty afterwards).
+            dst (str): Target directory.
+
+        Raises:
+            OSError: If a move fails; the caller treats the extraction as failed.
+        """
+        os.makedirs(dst, exist_ok=True)
+        for name in os.listdir(src_dir):
+            src_path = os.path.join(src_dir, name)
+            dst_path = os.path.join(dst, name)
+            if os.path.isdir(src_path) and not os.path.islink(src_path) and os.path.isdir(dst_path):
+                cls._merge_into(src_path, dst_path)
+                os.rmdir(src_path)
+                continue
+            if os.path.lexists(dst_path):
+                dst_path = cls._unique_destination(dst, name)
+            shutil.move(src_path, dst_path)
+
+    @staticmethod
     def _is_archive(src: str) -> bool:
         """
         Return whether ``src`` can be treated as an archive candidate.
@@ -99,13 +142,19 @@ class ArchExtractor:
         """
         Remove known OS/tool-generated files from an extracted tree.
 
+        Directories are removed only when they match a directory pattern (see ``is_auto_generated_dir``); file patterns apply to files only.
+
         Args:
-            dst (str): Root directory to scan and clean.
+            dst (str): Root directory to scan and clean. Callers pass a staging directory holding only the output of the current extraction.
+
+        Raises:
+            OSError: If a removal fails.
         """
         for root, dirs, files in os.walk(dst, topdown=True):
             for dirname in list(dirs):
                 dirpath = os.path.join(root, dirname)
-                if is_auto_generated(dirpath) and os.path.exists(dirpath):
+                # 只用目录型规则判断目录：文件规则（*~、Icon 等）会误伤同名的真实内容目录
+                if is_auto_generated_dir(dirpath) and os.path.exists(dirpath):
                     shutil.rmtree(dirpath)
                     dirs.remove(dirname)
                     logger.info(
@@ -213,59 +262,88 @@ class ArchExtractor:
 
         mode = self._validate_mode(mode)
 
-        # 提取顶层压缩包
-        if (
-            self.extract(
-                src=src,
-                dst=dst,
-                mode="x",
-                verbosity=verbosity,
-                program=program,
-                interactive=interactive,
-                password=password,
-                cleanup=False,
+        # 整个递归解压都在 dst 下的私有暂存目录里进行：清理与扁平化只作用于本次调用产出的文件，
+        # 失败时整个暂存目录被丢弃，dst 里既不会被删改原有内容，也不会残留半成品。
+        try:
+            staging = self._make_staging(dst)
+        except OSError as exc:
+            logger.error(
+                f"Failed to create a staging directory in {dst}: {exc.__class__.__name__}: {exc}"
             )
-            is None
-        ):
             return None
 
-        processed_archives = {os.path.realpath(src)}
+        try:
+            # 提取顶层压缩包
+            if (
+                self.extract(
+                    src=src,
+                    dst=staging,
+                    mode="x",
+                    verbosity=verbosity,
+                    program=program,
+                    interactive=interactive,
+                    password=password,
+                    cleanup=False,
+                )
+                is None
+            ):
+                return None
 
-        # 扫描实际输出目录，而不是按压缩包文件名推断目录。压缩包可以直接
-        # 在输出目录顶层释放文件，也可以释放和文件名无关的顶层目录。
-        while True:
-            extracted_nested_archive = False
-            for root, dirs, files in os.walk(dst):
-                for file in files:
-                    sub_file = os.path.join(root, file)
-                    real_sub_file = os.path.realpath(sub_file)
-                    if real_sub_file in processed_archives:
-                        continue
-                    if not self._is_archive(sub_file):
-                        continue
-                    result = self.extract(
-                        src=sub_file,
-                        dst=os.path.dirname(sub_file),
-                        mode="x",
-                        verbosity=verbosity,
-                        program=program,
-                        interactive=interactive,
-                        password=password,
-                        cleanup=cleanup,
-                    )
-                    if result is None:
-                        return None
-                    processed_archives.add(real_sub_file)
-                    extracted_nested_archive = True
-            if not extracted_nested_archive:
-                break
+            processed_archives = {os.path.realpath(src)}
 
-        if mode == "e":
-            self._flatten(dst=dst)
+            # 扫描实际输出目录，而不是按压缩包文件名推断目录。压缩包可以直接
+            # 在输出目录顶层释放文件，也可以释放和文件名无关的顶层目录。
+            while True:
+                extracted_nested_archive = False
+                for root, dirs, files in os.walk(staging):
+                    for file in files:
+                        sub_file = os.path.join(root, file)
+                        real_sub_file = os.path.realpath(sub_file)
+                        if real_sub_file in processed_archives:
+                            continue
+                        if not self._is_archive(sub_file):
+                            continue
+                        result = self.extract(
+                            src=sub_file,
+                            dst=os.path.dirname(sub_file),
+                            mode="x",
+                            verbosity=verbosity,
+                            program=program,
+                            interactive=interactive,
+                            password=password,
+                            cleanup=cleanup,
+                        )
+                        if result is None:
+                            return None
+                        processed_archives.add(real_sub_file)
+                        extracted_nested_archive = True
+                if not extracted_nested_archive:
+                    break
+
+            if mode == "e":
+                self._flatten(dst=staging)
+
+            # 全部成功后才把结果并入 dst
+            self._merge_into(staging, dst)
+
+        except OSError as exc:
+            logger.error(
+                f"Failed to perform file-level operations: {exc.__class__.__name__}: {exc}"
+            )
+            return None
+
+        finally:
+            shutil.rmtree(staging, ignore_errors=True)
 
         if cleanup and os.path.exists(src):
-            os.remove(src)
-            logger.info(f"Removed the file {src} because cleanup is enabled")
+            try:
+                os.remove(src)
+                logger.info(f"Removed the file {src} because cleanup is enabled")
+            except OSError as exc:
+                # 解压本身已经成功并落盘；删除源文件失败只记录，不改变结果
+                logger.error(
+                    f"Failed to remove the source archive {src}: {exc.__class__.__name__}: {exc}"
+                )
 
         return dst
 
@@ -319,42 +397,65 @@ class ArchExtractor:
         ):
             return None
 
+        # 先解压到 dst 下的私有暂存目录：清理与扁平化只作用于本次解压产出的文件，
+        # 不会删除或挪动 dst 中原有的内容；解压或后处理失败时整个暂存目录被丢弃，不留残留。
         try:
-            # 尝试提取该压缩文件
-            # patool 会返回真实的解压目标路径；调用方可以用它判断本次解压是否成功。
-            extracted_path = patoolib.extract_archive(
-                src,
-                outdir=dst,
-                verbosity=verbosity,
-                program=program,
-                interactive=interactive,
-                password=password,
-            )
-
-        except PatoolError as exc:
+            staging = self._make_staging(dst)
+        except OSError as exc:
             logger.error(
-                f"Failed to extract the archive file {src}: {exc.__class__.__name__}: {exc}"
+                f"Failed to create a staging directory in {dst}: {exc.__class__.__name__}: {exc}"
             )
             return None
 
         try:
+            try:
+                # 尝试提取该压缩文件
+                patoolib.extract_archive(
+                    src,
+                    outdir=staging,
+                    verbosity=verbosity,
+                    program=program,
+                    interactive=interactive,
+                    password=password,
+                )
+
+            except PatoolError as exc:
+                logger.error(
+                    f"Failed to extract the archive file {src}: {exc.__class__.__name__}: {exc}"
+                )
+                return None
+
             # 删除由操作系统或工具自动生成的文件夹/文件
-            self._remove_auto_generated(dst)
+            self._remove_auto_generated(staging)
 
             if mode == "e":
-                self._flatten(dst=dst)
+                self._flatten(dst=staging)
 
-            # 只有在 patool 解压成功并完成后处理后，才删除源压缩包。
-            if cleanup and os.path.exists(src):
-                os.remove(src)
-                logger.info(f"Removed the file {src} because cleanup is enabled")
+            # 后处理全部成功后，才把本次的结果并入 dst
+            self._merge_into(staging, dst)
 
         except OSError as exc:
+            # 后处理失败不能当作成功返回：结果可能不完整
             logger.error(
                 f"Failed to perform file-level operations: {exc.__class__.__name__}: {exc}"
             )
+            return None
 
-        return extracted_path
+        finally:
+            shutil.rmtree(staging, ignore_errors=True)
+
+        # 只有在 patool 解压成功并完成后处理后，才删除源压缩包。
+        if cleanup and os.path.exists(src):
+            try:
+                os.remove(src)
+                logger.info(f"Removed the file {src} because cleanup is enabled")
+            except OSError as exc:
+                # 解压本身已经成功并落盘；删除源文件失败只记录，不改变结果
+                logger.error(
+                    f"Failed to remove the source archive {src}: {exc.__class__.__name__}: {exc}"
+                )
+
+        return dst
 
     def _flatten(
         self,
@@ -370,24 +471,22 @@ class ArchExtractor:
 
         Returns:
             None
-        """
-        try:
-            # 将所有文件移动到顶层目录，并从深至浅清理空目录。只移动文件，
-            # 避免同名目录和文件冲突时把文件塞进已有目录。
-            for root, dirs, files in os.walk(dst, topdown=False):
-                # 跳过已经在顶层目录的文件
-                if root == dst:
-                    continue
-                for filename in files:
-                    # 如果目标路径已存在，处理文件/目录名称冲突（重命名）
-                    dest_filepath = self._unique_destination(dst, filename)
-                    shutil.move(os.path.join(root, filename), dest_filepath)
-                try:
-                    os.rmdir(root)
-                except OSError:
-                    pass
 
-        except OSError as exc:
-            logger.error(
-                f"Failed to perform file-level operations: {exc.__class__.__name__}: {exc}"
-            )
+        Raises:
+            OSError: If moving a file fails; the caller treats the extraction as failed instead of returning a half-flattened tree as a success.
+        """
+        # 将所有文件移动到顶层目录，并从深至浅清理空目录。只移动文件，
+        # 避免同名目录和文件冲突时把文件塞进已有目录。
+        for root, dirs, files in os.walk(dst, topdown=False):
+            # 跳过已经在顶层目录的文件
+            if root == dst:
+                continue
+            for filename in files:
+                # 如果目标路径已存在，处理文件/目录名称冲突（重命名）
+                dest_filepath = self._unique_destination(dst, filename)
+                shutil.move(os.path.join(root, filename), dest_filepath)
+            try:
+                os.rmdir(root)
+            except OSError as exc:
+                # 只剩不会被移动的条目（例如指向目录的符号链接）时目录非空，保留它即可
+                logger.debug(f"Kept the non-empty directory {root}: {exc}")

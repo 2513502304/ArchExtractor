@@ -10,7 +10,8 @@ A Python module for extracting archive files, with support for recursively unpac
 - Extract one: Extract a single archive without processing nested archives.
 - Extract all: Recursively extract nested archive files found in the output directory.
 - Output mode: Preserve the original directory tree with `mode="x"` or flatten files into the destination directory with `mode="e"`; duplicate flattened file names are renamed with suffixes such as `(1)` to avoid overwrites.
-- Generated file cleanup: Remove common system/tool-generated files such as `__MACOSX`, `.DS_Store`, `PaxHeader`, and `Thumbs.db`.
+- Generated file cleanup: Remove common system/tool-generated files such as `__MACOSX`, `.DS_Store`, `PaxHeader`, and `Thumbs.db`. A directory is removed only when it matches a directory pattern (`__MACOSX`, `.Trashes`, `PaxHeader`, ...); file patterns such as editor backups (`*~`) or `Icon` never remove a folder that merely shares the name.
+- Safe destination: Each extraction runs in a private staging directory inside `dst`, so cleanup and flattening only touch the files that call produced. Existing content of `dst` is never deleted, moved, or overwritten (a name clash is renamed with a suffix such as `(1)`), and a failed extraction leaves nothing behind in `dst`.
 - Source cleanup: Delete source archives only after successful extraction when `cleanup=True`.
 - Backend options: Pass `program`, `interactive`, `password`, and `verbosity` to `patool`.
 
@@ -48,7 +49,7 @@ brew install 7zip rar
 | `extractall(src, dst, ...)` | Extract one archive and recursively extract nested archives found under `dst`. | `str \| None` |
 
 > [!NOTE]
-> `extract()` and `extractall()` return `None` when validation or extraction fails. Passing a `mode` other than `"x"` or `"e"` raises `ValueError`.
+> `extract()` and `extractall()` return `dst` on success and `None` when validation, extraction, or post-processing (cleanup, flattening, moving the result into `dst`) fails. Passing a `mode` other than `"x"` or `"e"` raises `ValueError`.
 
 ## **Usage**
 
