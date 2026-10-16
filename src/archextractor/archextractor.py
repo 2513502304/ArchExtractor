@@ -253,7 +253,7 @@ class ArchExtractor:
 
             When ``cleanup=True``, the top-level source archive is removed only after every archive extraction in the recursive pass returns successfully.
 
-            Nested archives are removed after their own successful extraction.
+            When ``cleanup=True``, each nested archive is also removed after its own successful extraction; otherwise nested archives stay in the output next to their extracted contents.
 
         Args:
             src (str): The source path of the archive file (only file path, not directory path).
@@ -391,7 +391,7 @@ class ArchExtractor:
             cleanup (bool, optional): If the cleanup parameter is provided as True, the source archive file will be deleted after successful extraction. Defaults to False.
 
         Returns:
-            str | None: The directory where the archive has been extracted (returned by ``patoolib.extract_archive``) when extraction succeeds. ``None`` when validation or extraction fails.
+            str | None: ``dst`` when extraction and post-processing succeed. ``None`` when validation, extraction, or post-processing (cleanup, flattening, moving the result into ``dst``) fails.
 
         Raises:
             ValueError: If ``mode`` is not ``"e"`` or ``"x"``.
