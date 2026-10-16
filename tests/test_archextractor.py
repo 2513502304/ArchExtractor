@@ -379,6 +379,31 @@ class ArchExtractorTest(unittest.TestCase):
 
         self.assert_tree(out, {"book/data.swp"})
 
+    def test_symlinked_directory_in_dst_is_not_written_through(self):
+        outside = self.base / "outside"
+        outside.mkdir()
+        out = self.base / "out"
+        out.mkdir()
+        (out / "book").symlink_to(outside, target_is_directory=True)
+        source = self.make_zip(self.base / "source.zip", {"book/001.jpg": "page"})
+
+        ArchExtractor().extract(src=str(source), dst=str(out), verbosity=-1)
+
+        self.assertEqual(list(outside.iterdir()), [])
+        self.assertTrue((out / "book").is_symlink())
+        self.assertEqual((out / "book(1)" / "001.jpg").read_text(), "page")
+
+    def test_dangling_symlink_in_dst_is_not_replaced(self):
+        out = self.base / "out"
+        out.mkdir()
+        (out / "001.jpg").symlink_to(self.base / "missing-target")
+        source = self.make_zip(self.base / "source.zip", {"001.jpg": "page"})
+
+        ArchExtractor().extract(src=str(source), dst=str(out), verbosity=-1)
+
+        self.assertTrue((out / "001.jpg").is_symlink())
+        self.assertEqual((out / "001(1).jpg").read_text(), "page")
+
     def test_only_directory_patterns_mark_a_directory_as_generated(self):
         self.assertTrue(is_auto_generated_dir("archive/__MACOSX"))
         self.assertTrue(is_auto_generated_dir("archive/PaxHeader"))
